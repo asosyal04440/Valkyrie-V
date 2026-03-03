@@ -1,0 +1,41 @@
+name: Benchmark Suite
+
+[bench]
+benchmarks = true
+iterations = 10
+
+[[bench]]
+name = "boot_time"
+full_name = "vm_boot_time"
+description = "Measure VM boot time"
+tags = ["vm", "boot"]
+
+[[bench]]
+name = "memory_overhead"
+full_name = "memory_overhead"
+description = "Measure memory overhead"
+tags = ["memory", "vm"]
+
+[[bench]]
+name = "virtio_throughput"
+full_name = "virtio_net_throughput"
+description = "Measure VirtIO network throughput"
+tags = ["network", "virtio"]
+
+[[bench]]
+name = "vmexit_latency"
+full_name = "vmexit_latency"
+description = "Measure VM exit latency"
+tags = ["vm", "performance"]
+
+[[bench]]
+name = "context_switch"
+full_name = "context_switch_time"
+description = "Measure vCPU context switch time"
+tags = ["vcpu", "performance"]
+
+[[bench]]
+name = "ept_walk"
+full_name = "ept_page_walk"
+description = "Measure EPT page walk latency"
+tags = ["ept", "memory"]

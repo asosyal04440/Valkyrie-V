@@ -1,0 +1,86 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+**/Cargo.lock
+
+# Build artifacts
+*.o
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Debug
+*.pdb
+*.dSYM
+*.su
+
+# Documentation
+/doc/
+!/doc/src/
+
+# Test coverage
+*.profraw
+*.profdata
+/coverage/
+
+# Benchmarks
+/benches/target/
+/criterion/
+
+# Fuzz
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Backup files
+*.bak
+*.backup
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Secrets (never commit these)
+*.pem
+*.key
+*.crt
+secrets/
+.secrets/
+
+# Build directories
+build/
+dist/
+out/
+
+# Package manager
+node_modules/

@@ -1,0 +1,40 @@
+[package]
+name = "valkyrie_v"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ironshim = { package = "ironshim-rs", git = "https://github.com/asosyal04440/IronShim-rs" }
+libm = "0.2"
+
+[features]
+default = []
+baremetal-bin = []
+baremetal-lib = []
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[profile.test]
+panic = "abort"
+
+[profile.bench]
+panic = "abort"
+
+[lib]
+name = "valkyrie_v"
+path = "src/lib.rs"
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "valkyrie_v"
+path = "src/main.rs"
+bench = false
+required-features = ["baremetal-bin"]
+
+[[bench]]
+name = "micro_bench"
+harness = false
