@@ -53,8 +53,15 @@ pub mod error {
 }
 
 /// Default framebuffer dimensions
+#[cfg(not(test))]
 pub const DEFAULT_WIDTH: u32 = 1024;
+#[cfg(not(test))]
 pub const DEFAULT_HEIGHT: u32 = 768;
+/// Default framebuffer dimensions (reduced for tests)
+#[cfg(test)]
+pub const DEFAULT_WIDTH: u32 = 64;
+#[cfg(test)]
+pub const DEFAULT_HEIGHT: u32 = 64;
 pub const DEFAULT_BPP: u32 = 32;
 
 /// Maximum number of scanouts (displays)
@@ -254,6 +261,7 @@ struct AttachBackingParams {
 }
 
 /// Backing entry for resource
+#[derive(Clone, Copy)]
 struct BackingEntry {
     addr: u64,
     length: u32,
@@ -472,7 +480,11 @@ impl VirtIoGpu {
         let mut processed = 0u32;
 
         while let Some(head) = self.control_vq.pop_avail() {
-            let chain = self.control_vq.walk_chain(head);
+            let mut chain = self.control_vq.walk_chain(head);
+            
+            // Collect chain elements into a fixed buffer
+            let mut elems: [DescChainElem; 8] = [DescChainElem { addr: 0, len: 0, write: false }; 8];
+            let chain_len = chain.collect_into(&mut elems);
             
             // Process command header (24 bytes)
             // struct virtio_gpu_ctrl_hdr {
@@ -484,13 +496,13 @@ impl VirtIoGpu {
             // }
             
             // Read command type from guest memory via DMA
-            let cmd_type = if chain.len() > 0 {
-                let elem = &chain[0];
+            let cmd_type = if chain_len > 0 {
+                let elem = &elems[0];
                 if elem.len >= 4 {
                     // Use DMA engine to read from guest memory
                     // DMA engine would be passed from VirtIoMmio or hypervisor
                     // For now, we read from the mapped GPA
-                    self.read_cmd_u32(elem.gpa)
+                    self.read_cmd_u32(elem.addr)
                 } else {
                     0
                 }
@@ -504,10 +516,10 @@ impl VirtIoGpu {
                     // Return display info response (80 bytes)
                     let resp = self.handle_get_display_info();
                     // Write response to guest memory via DMA
-                    if chain.len() > 1 {
-                        let resp_elem = &chain[1];
-                        if resp_elem.flags & 0x1 != 0 { // Write descriptor
-                            self.write_response(resp_elem.gpa, &resp);
+                    if chain_len > 1 {
+                        let resp_elem = &elems[1];
+                        if resp_elem.write {
+                            self.write_response(resp_elem.addr, &resp);
                         }
                     }
                     80
@@ -515,32 +527,32 @@ impl VirtIoGpu {
                 cmd::SET_SCANOUT => {
                     // Set scanout configuration
                     // Read parameters from guest memory
-                    if chain.len() > 0 {
-                        let params = self.read_set_scanout_params(chain[0].gpa);
+                    if chain_len > 0 {
+                        let params = self.read_set_scanout_params(elems[0].addr);
                         self.apply_scanout_config(params);
                     }
                     0
                 }
                 cmd::RESOURCE_CREATE_2D => {
                     // Create 2D resource
-                    if chain.len() > 0 {
-                        let params = self.read_create_2d_params(chain[0].gpa);
+                    if chain_len > 0 {
+                        let params = self.read_create_2d_params(elems[0].addr);
                         self.create_resource_2d(params);
                     }
                     0
                 }
                 cmd::RESOURCE_UNREF => {
                     // Unreference resource
-                    if chain.len() > 0 {
-                        let resource_id = self.read_resource_id(chain[0].gpa);
+                    if chain_len > 0 {
+                        let resource_id = self.read_resource_id(elems[0].addr);
                         self.unref_resource(resource_id);
                     }
                     0
                 }
                 cmd::RESOURCE_FLUSH => {
                     // Flush resource to display
-                    if chain.len() > 0 {
-                        let params = self.read_flush_params(chain[0].gpa);
+                    if chain_len > 0 {
+                        let params = self.read_flush_params(elems[0].addr);
                         self.flush_resource(params);
                     }
                     self.frames_rendered.fetch_add(1, Ordering::Relaxed);
@@ -548,24 +560,24 @@ impl VirtIoGpu {
                 }
                 cmd::TRANSFER_TO_HOST_2D => {
                     // Transfer data to host
-                    if chain.len() > 0 {
-                        let params = self.read_transfer_params(chain[0].gpa);
+                    if chain_len > 0 {
+                        let params = self.read_transfer_params(elems[0].addr);
                         self.transfer_to_host(params);
                     }
                     0
                 }
                 cmd::RESOURCE_ATTACH_BACKING => {
                     // Attach backing storage to resource
-                    if chain.len() > 0 {
-                        let params = self.read_attach_backing_params(chain[0].gpa);
+                    if chain_len > 0 {
+                        let params = self.read_attach_backing_params(elems[0].addr);
                         self.attach_backing(params);
                     }
                     0
                 }
                 cmd::RESOURCE_DETACH_BACKING => {
                     // Detach backing storage
-                    if chain.len() > 0 {
-                        let resource_id = self.read_resource_id(chain[0].gpa);
+                    if chain_len > 0 {
+                        let resource_id = self.read_resource_id(elems[0].addr);
                         self.detach_backing(resource_id);
                     }
                     0
@@ -666,7 +678,7 @@ impl VirtIoGpu {
         AttachBackingParams {
             resource_id: self.read_cmd_u32(gpa + 24),
             nr_entries: self.read_cmd_u32(gpa + 28),
-            entries: [], // Would read from chain descriptors
+            entries: [BackingEntry { addr: 0, length: 0, padding: 0 }; 8], // Would read from chain descriptors
         }
     }
 
@@ -798,12 +810,16 @@ impl VirtIoGpu {
         let mut processed = 0u32;
 
         while let Some(head) = self.cursor_vq.pop_avail() {
-            let chain = self.cursor_vq.walk_chain(head);
+            let mut chain = self.cursor_vq.walk_chain(head);
             
-            let cmd_type = if chain.len() > 0 {
-                let elem = &chain[0];
+            // Collect chain elements into a fixed buffer
+            let mut elems: [DescChainElem; 8] = [DescChainElem { addr: 0, len: 0, write: false }; 8];
+            let chain_len = chain.collect_into(&mut elems);
+            
+            let cmd_type = if chain_len > 0 {
+                let elem = &elems[0];
                 if elem.len >= 4 {
-                    self.read_cmd_u32(elem.gpa)
+                    self.read_cmd_u32(elem.addr)
                 } else {
                     0
                 }
@@ -814,23 +830,23 @@ impl VirtIoGpu {
             match cmd_type {
                 cursor_cmd::SET => {
                     // Set cursor image
-                    if chain.len() > 0 {
-                        let params = self.read_cursor_params(chain[0].gpa);
+                    if chain_len > 0 {
+                        let params = self.read_cursor_params(elems[0].addr);
                         self.set_cursor(params);
                     }
                 }
                 cursor_cmd::MOVE => {
                     // Move cursor position
-                    if chain.len() > 0 {
-                        let x = self.read_cmd_u32(chain[0].gpa + 24);
-                        let y = self.read_cmd_u32(chain[0].gpa + 28);
+                    if chain_len > 0 {
+                        let x = self.read_cmd_u32(elems[0].addr + 24);
+                        let y = self.read_cmd_u32(elems[0].addr + 28);
                         self.move_cursor(x, y);
                     }
                 }
                 cursor_cmd::UPDATE => {
                     // Update cursor image data
-                    if chain.len() > 0 {
-                        let params = self.read_cursor_params(chain[0].gpa);
+                    if chain_len > 0 {
+                        let params = self.read_cursor_params(elems[0].addr);
                         self.update_cursor(params);
                     }
                 }

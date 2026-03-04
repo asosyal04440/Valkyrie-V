@@ -274,9 +274,11 @@ pub unsafe fn setup_host_tss(gdt_base: u64, tss_selector: u16) {
     HOST_TSS.set_ist(2, stack_top); // IST2 for double fault
     
     // Load TR with the TSS selector
+    // ltr requires a memory operand
+    let mut sel = tss_selector;
     core::arch::asm!(
-        "ltr {0}",
-        in(reg) tss_selector,
+        "ltr [{0}]",
+        in(reg) &mut sel,
         options(nostack, preserves_flags)
     );
     

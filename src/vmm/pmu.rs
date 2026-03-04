@@ -13,16 +13,32 @@ use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU16, AtomicU8, AtomicBool, 
 pub const MAX_PMU_COUNTERS: usize = 8;
 
 /// Maximum CPUs with PMU
+#[cfg(not(test))]
 pub const MAX_PMU_CPUS: usize = 256;
+/// Maximum CPUs with PMU (reduced for tests)
+#[cfg(test)]
+pub const MAX_PMU_CPUS: usize = 4;
 
 /// Maximum event groups
+#[cfg(not(test))]
 pub const MAX_EVENT_GROUPS: usize = 64;
+/// Maximum event groups (reduced for tests)
+#[cfg(test)]
+pub const MAX_EVENT_GROUPS: usize = 4;
 
 /// Maximum sampling buffers
+#[cfg(not(test))]
 pub const MAX_SAMPLING_BUFFERS: usize = 32;
+/// Maximum sampling buffers (reduced for tests)
+#[cfg(test)]
+pub const MAX_SAMPLING_BUFFERS: usize = 4;
 
 /// Sampling buffer size (entries)
+#[cfg(not(test))]
 pub const SAMPLING_BUFFER_SIZE: usize = 4096;
+/// Sampling buffer size (reduced for tests)
+#[cfg(test)]
+pub const SAMPLING_BUFFER_SIZE: usize = 64;
 
 /// PMU event types
 pub mod pmu_event {
@@ -342,7 +358,7 @@ impl SamplingBuffer {
         Self {
             buffer_id: AtomicU32::new(0),
             cpu_id: AtomicU8::new(0),
-            sampling_type: AtomicU16::new(sampling_type::IP | sampling_type::TIME),
+            sampling_type: AtomicU16::new((sampling_type::IP | sampling_type::TIME) as u16),
             entries: [const { SampleEntry::new() }; SAMPLING_BUFFER_SIZE],
             head: AtomicU32::new(0),
             tail: AtomicU32::new(0),
@@ -568,7 +584,7 @@ impl CpuPmuState {
         self.fixed_counters.store(fixed, Ordering::Release);
         self.prog_counters.store(prog, Ordering::Release);
         self.counter_width.store(width, Ordering::Release);
-        self.sampling_buffer.init(cpu_id as u32, cpu_id, sampling_type::IP | sampling_type::TIME);
+        self.sampling_buffer.init(cpu_id as u32, cpu_id, (sampling_type::IP | sampling_type::TIME) as u16);
         self.valid.store(true, Ordering::Release);
     }
 
@@ -724,7 +740,7 @@ impl PmuController {
             cpu_count: AtomicU16::new(0),
             enabled: AtomicBool::new(false),
             sampling_enabled: AtomicBool::new(false),
-            default_sampling_type: AtomicU16::new(sampling_type::IP | sampling_type::TIME),
+            default_sampling_type: AtomicU16::new((sampling_type::IP | sampling_type::TIME) as u16),
             default_sample_period: AtomicU64::new(1000000),
             global_enable: AtomicBool::new(false),
             total_counters: AtomicU64::new(0),

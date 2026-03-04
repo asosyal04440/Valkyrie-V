@@ -14,6 +14,13 @@ pub const PAGE_4K: u64 = 4096;
 pub const PAGE_2M: u64 = 2 * 1024 * 1024;
 pub const PAGE_1G: u64 = 1024 * 1024 * 1024;
 
+/// 4K pages per 2M page
+#[cfg(not(test))]
+pub const PAGES_PER_2M: usize = 512;
+/// 4K pages per 2M page (reduced for tests)
+#[cfg(test)]
+pub const PAGES_PER_2M: usize = 16;
+
 /// EPT levels
 pub mod ept_level {
     pub const PML4: u8 = 4;
@@ -38,13 +45,25 @@ pub mod ept_flag {
 }
 
 /// Maximum EPT entries cached
+#[cfg(not(test))]
 pub const MAX_EPT_CACHE: usize = 65536;
+/// Maximum EPT entries cached (reduced for tests)
+#[cfg(test)]
+pub const MAX_EPT_CACHE: usize = 64;
 
 /// Maximum EPT violations batched
+#[cfg(not(test))]
 pub const MAX_VIOLATION_BATCH: usize = 256;
+/// Maximum EPT violations batched (reduced for tests)
+#[cfg(test)]
+pub const MAX_VIOLATION_BATCH: usize = 16;
 
 /// Maximum VMs
+#[cfg(not(test))]
 pub const MAX_EPT_VMS: usize = 256;
+/// Maximum VMs (reduced for tests)
+#[cfg(test)]
+pub const MAX_EPT_VMS: usize = 4;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EPT Cache Entry
@@ -274,7 +293,7 @@ impl VmEptState {
             dirty_tracking: AtomicBool::new(false),
             pml_enabled: AtomicBool::new(false),
             pml_addr: AtomicU64::new(0),
-            pml_index: AtomicU16::new0),
+            pml_index: AtomicU16::new(0),
             pages_4k: AtomicU64::new(0),
             pages_2m: AtomicU64::new(0),
             pages_1g: AtomicU64::new(0),
@@ -540,14 +559,19 @@ impl EptController {
         let mut processed = 0u32;
         
         for i in 0..count as usize {
-            let viol = &self.violations[i];
-            if viol.valid.load(Ordering::Acquire) {
+            // Extract values first to avoid borrow conflicts
+            let (valid, gpa, vm_id, qual) = {
+                let viol = &self.violations[i];
+                let valid = viol.valid.load(Ordering::Acquire);
                 let gpa = viol.gpa.load(Ordering::Acquire);
                 let vm_id = viol.vm_id.load(Ordering::Acquire);
                 let qual = viol.qualification.load(Ordering::Acquire);
-                
+                (valid, gpa, vm_id, qual)
+            };
+            
+            if valid {
                 self.resolve_violation(gpa, vm_id, qual)?;
-                viol.set_status(1); // Resolved
+                self.violations[i].set_status(1); // Resolved
                 processed += 1;
             }
         }
@@ -650,11 +674,11 @@ impl EptController {
             return Err(HvError::LogicalFault);
         }
         
-        // Check if all 512 4K pages are candidates
+        // Check if all 4K pages in the 2M region are candidates
         let mut all_candidates = true;
         let threshold = self.large_threshold.load(Ordering::Acquire);
         
-        for i in 0..512 {
+        for i in 0..PAGES_PER_2M {
             let gpa = gpa_base + i as u64 * PAGE_4K;
             if let Some(entry) = self.find_cache_entry(gpa, vm_id) {
                 if entry.access_count.load(Ordering::Acquire) < threshold {
@@ -683,7 +707,7 @@ impl EptController {
         
         // Update VM state
         let vm_state = self.get_vm_state(vm_id).ok_or(HvError::LogicalFault)?;
-        vm_state.pages_4k.fetch_sub(512, Ordering::Release);
+        vm_state.pages_4k.fetch_sub(PAGES_PER_2M as u64, Ordering::Release);
         vm_state.pages_2m.fetch_add(1, Ordering::Release);
         vm_state.large_promotions.fetch_add(1, Ordering::Release);
         
@@ -870,8 +894,8 @@ mod tests {
         ctrl.register_vm(1, 0x1000000, 6).unwrap();
         ctrl.large_threshold.store(1, Ordering::Release);
         
-        // Create 512 4K pages
-        for i in 0..512 {
+        // Create 4K pages (PAGES_PER_2M = 16 in tests)
+        for i in 0..PAGES_PER_2M {
             ctrl.handle_violation(0x200000 + i as u64 * PAGE_4K, 0, 1, 0).unwrap();
         }
         

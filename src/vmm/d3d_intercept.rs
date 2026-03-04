@@ -332,6 +332,25 @@ impl D3DInterceptor {
             kind: UGCommandKind::Nop,
             _pad: [0; 3],
             p: UGPayload::zeroed(),
+            x: 0,
+            y: 0,
+            z: 0,
+            src_addr: 0,
+            dst_addr: 0,
+            size: 0,
+            clear_value: 0.0,
+            width: 0,
+            height: 0,
+            handle: UGHandle::NULL,
+            pipeline_id: 0,
+            descriptor_id: 0,
+            descriptor_set: 0,
+            binding: 0,
+            buffer_addr: 0,
+            stride: 0,
+            index_type: 0,
+            buffer_id: 0,
+            offset: 0,
         };
         Self {
             state: D3DStateTracker::new(version),
@@ -372,6 +391,7 @@ impl D3DInterceptor {
                     instance_count,
                     start_index,
                 ),
+                ..UGCommand::default()
             };
             self.batch_len += 1;
         }
@@ -395,6 +415,7 @@ impl D3DInterceptor {
                 kind: UGCommandKind::DrawPrimitive,
                 _pad: [0; 3],
                 p: draw_p,
+                ..UGCommand::default()
             };
             self.batch_len += 1;
         }
@@ -410,6 +431,7 @@ impl D3DInterceptor {
                 kind: UGCommandKind::SetShader,
                 _pad: [0; 3],
                 p: UGPayload::set_shader(handle, ShaderStage::Vertex),
+                ..UGCommand::default()
             };
             self.batch_len += 1;
         }
@@ -425,6 +447,7 @@ impl D3DInterceptor {
                 kind: UGCommandKind::SetShader,
                 _pad: [0; 3],
                 p: UGPayload::set_shader(handle, ShaderStage::Pixel),
+                ..UGCommand::default()
             };
             self.batch_len += 1;
         }
@@ -438,6 +461,7 @@ impl D3DInterceptor {
                 kind: UGCommandKind::Dispatch,
                 _pad: [0; 3],
                 p: UGPayload::dispatch(x, y, z),
+                ..UGCommand::default()
             };
             self.batch_len += 1;
         }
@@ -451,6 +475,7 @@ impl D3DInterceptor {
                 kind: UGCommandKind::Present,
                 _pad: [0; 3],
                 p: UGPayload::present(swap_chain_handle),
+                ..UGCommand::default()
             };
             self.batch_len += 1;
         }
@@ -464,6 +489,7 @@ impl D3DInterceptor {
                 kind: UGCommandKind::ClearColor,
                 _pad: [0; 3],
                 p: UGPayload::clear_color(r, g, b, a, UGHandle(target)),
+                ..UGCommand::default()
             };
             self.batch_len += 1;
         }
@@ -744,11 +770,7 @@ mod tests {
         intercept.on_present(0);
         assert_eq!(intercept.batch_len(), 2);
 
-        let mut out = [UGCommand {
-            kind: UGCommandKind::Nop,
-            _pad: [0; 3],
-            p: UGPayload::zeroed(),
-        }; 8];
+        let mut out = [UGCommand::default(); 8];
         let flushed = intercept.flush_batch(&mut out);
         assert_eq!(flushed, 2);
         assert_eq!(intercept.batch_len(), 0);
@@ -807,11 +829,7 @@ mod tests {
         let args = [0u64, 6, 0, 0, 0, 0];
         mgr.handle_vmcall(d3d11_slot::DRAW_INDEXED as u32, args);
 
-        let mut out = [UGCommand {
-            kind: UGCommandKind::Nop,
-            _pad: [0; 3],
-            p: UGPayload::zeroed(),
-        }; 16];
+        let mut out = [UGCommand::default(); 16];
         let n = mgr.flush_active(&mut out);
         assert_eq!(n, 1);
         assert_eq!(out[0].kind, UGCommandKind::DrawIndexed);

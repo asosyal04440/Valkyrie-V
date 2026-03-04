@@ -245,7 +245,7 @@ impl VramPool {
 
         // Map VRAM region via page table setup
         // This creates proper GPU virtual address mapping
-        let (gpu_va, cpu_va) = self.setup_vram_mapping(bar_base, size, bar_idx, mem_type);
+        let (gpu_va, cpu_va) = self.setup_vram_mapping(bar_base, size, bar_idx as u32, mem_type);
 
         let region = VramRegion {
             bar_base,

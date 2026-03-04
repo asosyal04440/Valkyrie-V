@@ -256,10 +256,10 @@ impl VirtualApicPage {
             let irr = self.regs[idx].load(Ordering::Acquire);
             if irr != 0 {
                 // Find highest set bit
-                let vector_base = (7 - i) * 32;
+                let vector_base = i * 32;
                 for bit in (0..32).rev() {
                     if (irr & (1 << bit)) != 0 {
-                        return Some(vector_base + bit as u8);
+                        return Some((vector_base + bit) as u8);
                     }
                 }
             }

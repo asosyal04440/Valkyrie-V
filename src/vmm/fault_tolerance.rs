@@ -269,23 +269,30 @@ impl CheckpointController {
             return Err(HvError::LogicalFault);
         }
         
-        let ckpt = &self.checkpoints[ckpt_id as usize];
-        if !ckpt.valid.load(Ordering::Acquire) {
+        // Extract all needed values first to avoid borrow conflicts
+        let (valid, is_incremental, stored_checksum) = {
+            let ckpt = &self.checkpoints[ckpt_id as usize];
+            let valid = ckpt.valid.load(Ordering::Acquire);
+            let is_incremental = ckpt.ckpt_type.load(Ordering::Acquire) == ckpt_type::INCREMENTAL;
+            let stored_checksum = ckpt.checksum.load(Ordering::Acquire);
+            (valid, is_incremental, stored_checksum)
+        };
+        
+        if !valid {
             return Err(HvError::LogicalFault);
         }
         
-        ckpt.state.store(ckpt_state::RESTORING, Ordering::Release);
+        self.checkpoints[ckpt_id as usize].state.store(ckpt_state::RESTORING, Ordering::Release);
         
         // Verify checksum
-        let stored_checksum = ckpt.checksum.load(Ordering::Acquire);
         let calc_checksum = self.calculate_checksum(ckpt_id);
         if stored_checksum != calc_checksum {
-            ckpt.state.store(ckpt_state::FAILED, Ordering::Release);
+            self.checkpoints[ckpt_id as usize].state.store(ckpt_state::FAILED, Ordering::Release);
             return Err(HvError::LogicalFault);
         }
         
         // For incremental, restore chain
-        if ckpt.ckpt_type.load(Ordering::Acquire) == ckpt_type::INCREMENTAL {
+        if is_incremental {
             self.restore_chain(ckpt_id)?;
         } else {
             // Full checkpoint restore
@@ -294,7 +301,7 @@ impl CheckpointController {
             self.restore_device_state(ckpt_id)?;
         }
         
-        ckpt.state.store(ckpt_state::CREATED, Ordering::Release);
+        self.checkpoints[ckpt_id as usize].state.store(ckpt_state::CREATED, Ordering::Release);
         
         Ok(())
     }
@@ -345,6 +352,9 @@ impl CheckpointController {
         
         // Check if other checkpoints depend on this one
         for i in 0..MAX_CHECKPOINTS {
+            if i == ckpt_id as usize {
+                continue; // Skip self
+            }
             let other = &self.checkpoints[i];
             if other.valid.load(Ordering::Acquire) && 
                other.parent_id.load(Ordering::Acquire) == ckpt_id {
@@ -570,10 +580,11 @@ impl HaController {
     }
 
     /// Check node health
-    pub fn check_health(&self) -> Vec<u32, 16> {
+    pub fn check_health(&self) -> [u32; 16] {
         let now = Self::get_timestamp();
         let timeout = self.heartbeat_timeout.load(Ordering::Acquire) as u64;
-        let mut failed = Vec::new();
+        let mut failed: [u32; 16] = [0; 16];
+        let mut count = 0;
         
         for i in 0..self.node_count.load(Ordering::Acquire) as usize {
             let node = &self.nodes[i];
@@ -581,7 +592,10 @@ impl HaController {
             
             if now - last_hb > timeout {
                 node.state.store(ha_state::FAILED, Ordering::Release);
-                failed.push(node.node_id.load(Ordering::Acquire));
+                if count < 16 {
+                    failed[count] = node.node_id.load(Ordering::Acquire);
+                    count += 1;
+                }
             }
         }
         
@@ -640,13 +654,17 @@ impl HaController {
     }
 
     /// Get standby nodes
-    pub fn get_standby_nodes(&self) -> Vec<u32, 16> {
-        let mut standbys = Vec::new();
+    pub fn get_standby_nodes(&self) -> [u32; 16] {
+        let mut standbys: [u32; 16] = [0; 16];
+        let mut count = 0;
         
         for i in 0..self.node_count.load(Ordering::Acquire) as usize {
             let node = &self.nodes[i];
             if node.state.load(Ordering::Acquire) == ha_state::STANDBY {
-                standbys.push(node.node_id.load(Ordering::Acquire));
+                if count < 16 {
+                    standbys[count] = node.node_id.load(Ordering::Acquire);
+                    count += 1;
+                }
             }
         }
         
@@ -706,7 +724,7 @@ mod tests {
         ctrl.init(1, 0x1000);
         
         let id = ctrl.create_full().unwrap();
-        assert_ne!(id, 0);
+        // ID can be 0 (first slot), verify checkpoint is valid
         assert!(ctrl.checkpoints[id as usize].valid.load(Ordering::Acquire));
     }
 

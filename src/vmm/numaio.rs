@@ -497,7 +497,7 @@ impl NumaIoController {
         self.device_count.fetch_add(1, Ordering::Release);
         self.total_devices.fetch_add(1, Ordering::Release);
         
-        if numa_node as usize < MAX_NUMA_NODES {
+        if (numa_node as usize) < MAX_NUMA_NODES {
             self.devices_per_node[numa_node as usize].fetch_add(1, Ordering::Release);
         }
         
@@ -516,7 +516,7 @@ impl NumaIoController {
 
     /// Get devices by node
     pub fn get_devices_by_node(&self, node: u8) -> u8 {
-        if node as usize < MAX_NUMA_NODES {
+        if (node as usize) < MAX_NUMA_NODES {
             self.devices_per_node[node as usize].load(Ordering::Acquire)
         } else {
             0
@@ -536,7 +536,7 @@ impl NumaIoController {
         let device = self.get_device(device_id).ok_or(HvError::LogicalFault)?;
         device.set_irq_affinity(cpu_mask, node);
         
-        if node as usize < MAX_NUMA_NODES {
+        if (node as usize) < MAX_NUMA_NODES {
             self.irqs_per_node[node as usize].fetch_add(1, Ordering::Release);
         }
         
@@ -570,7 +570,8 @@ impl NumaIoController {
     /// Assign device to VM
     pub fn assign_device(&self, vm_id: u32, device_id: u32) -> Result<(), HvError> {
         let policy = self.get_vm_policy(vm_id).ok_or(HvError::LogicalFault)?;
-        policy.add_device(device_id)
+        policy.add_device(device_id);
+        Ok(())
     }
 
     /// Record I/O
@@ -600,7 +601,7 @@ impl NumaIoController {
             device.record_irq();
             
             let node = device.numa_node.load(Ordering::Acquire);
-            if node as usize < MAX_NUMA_NODES {
+            if (node as usize) < MAX_NUMA_NODES {
                 self.irqs_per_node[node as usize].fetch_add(1, Ordering::Release);
             }
             

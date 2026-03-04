@@ -10,16 +10,32 @@ use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU16, AtomicU8, AtomicBool, 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Maximum VMs with CBT
+#[cfg(not(test))]
 pub const MAX_CBT_VMS: usize = 128;
+/// Maximum VMs with CBT (reduced for tests)
+#[cfg(test)]
+pub const MAX_CBT_VMS: usize = 4;
 
 /// Maximum snapshots per VM
+#[cfg(not(test))]
 pub const MAX_SNAPSHOTS: usize = 32;
+/// Maximum snapshots per VM (reduced for tests)
+#[cfg(test)]
+pub const MAX_SNAPSHOTS: usize = 4;
 
 /// Maximum change regions per snapshot
+#[cfg(not(test))]
 pub const MAX_CHANGE_REGIONS: usize = 4096;
+/// Maximum change regions per snapshot (reduced for tests)
+#[cfg(test)]
+pub const MAX_CHANGE_REGIONS: usize = 16;
 
 /// Maximum bitmap size (pages)
+#[cfg(not(test))]
 pub const MAX_BITMAP_PAGES: usize = 262144; // 1GB with 4KB pages
+/// Maximum bitmap size (reduced for tests)
+#[cfg(test)]
+pub const MAX_BITMAP_PAGES: usize = 64;
 
 /// Page size
 pub const PAGE_SIZE: u64 = 4096;

@@ -457,13 +457,11 @@ impl VirtIoMmio {
                     // Deliver MSI-X interrupt
                     use crate::vmm::msi::{MsiMessage, deliver_msi};
                     let msg = MsiMessage {
-                        addr: addr,
-                        data: vector as u32,
+                        dest_id: ((addr >> 12) & 0xFF) as u8,
                         vector: vector as u8,
                         delivery_mode: 0,
                         trigger_mode: false,
-                        dest_id: (addr >> 12) as u32 & 0xFF,
-                        dest_mode: ((addr >> 2) & 1) as u8,
+                        dest_mode: ((addr >> 2) & 1) == 1,
                     };
                     deliver_msi(&msg);
                     return;

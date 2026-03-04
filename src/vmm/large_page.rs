@@ -27,10 +27,18 @@ pub const PAGES_PER_2M: usize = 512;
 pub const PAGES_PER_1G: usize = 262144;
 
 /// Maximum large pages tracked
+#[cfg(not(test))]
 pub const MAX_LARGE_PAGES: usize = 16384;
+/// Maximum large pages tracked (reduced for tests)
+#[cfg(test)]
+pub const MAX_LARGE_PAGES: usize = 16;
 
 /// Maximum small page entries
-pub const MAX_SMALL_PAGES: usize = MAX_LARGE_PAGES * PAGES_PER_2M;
+#[cfg(not(test))]
+pub const MAX_SMALL_PAGES: usize = 16384 * 512;
+/// Maximum small page entries (reduced for tests)
+#[cfg(test)]
+pub const MAX_SMALL_PAGES: usize = 16 * 512;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Large Page Entry

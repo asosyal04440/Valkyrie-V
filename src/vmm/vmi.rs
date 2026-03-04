@@ -10,19 +10,42 @@ use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU16, AtomicU8, AtomicBool, 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Maximum VMs with VMI
+#[cfg(not(test))]
 pub const MAX_VMI_VMS: usize = 128;
+/// Maximum VMs with VMI (reduced for tests)
+#[cfg(test)]
+pub const MAX_VMI_VMS: usize = 4;
 
 /// Maximum breakpoints per VM
+#[cfg(not(test))]
 pub const MAX_BREAKPOINTS: usize = 256;
+/// Maximum breakpoints per VM (reduced for tests)
+#[cfg(test)]
+pub const MAX_BREAKPOINTS: usize = 16;
 
 /// Maximum watchpoints per VM
+#[cfg(not(test))]
 pub const MAX_WATCHPOINTS: usize = 64;
+/// Maximum watchpoints per VM (reduced for tests)
+#[cfg(test)]
+pub const MAX_WATCHPOINTS: usize = 4;
 
 /// Maximum event subscriptions
+#[cfg(not(test))]
 pub const MAX_EVENT_SUBS: usize = 512;
+/// Maximum event subscriptions (reduced for tests)
+#[cfg(test)]
+pub const MAX_EVENT_SUBS: usize = 16;
 
 /// Maximum memory regions monitored
+#[cfg(not(test))]
 pub const MAX_MONITORED_REGIONS: usize = 32;
+/// Maximum memory regions monitored (reduced for tests)
+#[cfg(test)]
+pub const MAX_MONITORED_REGIONS: usize = 4;
+
+/// Event queue size
+pub const EVENT_QUEUE_SIZE: u8 = 255;
 
 /// Page size
 pub const PAGE_SIZE: u64 = 4096;
@@ -642,7 +665,7 @@ impl VmVmiState {
         let tail = self.event_tail.load(Ordering::Acquire);
         
         // Check if queue is full
-        let next_head = (head + 1) % 256;
+        let next_head = (head + 1) % EVENT_QUEUE_SIZE;
         if next_head == tail {
             self.events_dropped.fetch_add(1, Ordering::Release);
             return Err(HvError::LogicalFault);
@@ -668,7 +691,7 @@ impl VmVmiState {
         }
         
         let event = &self.event_queue[tail as usize];
-        self.event_tail.store((tail + 1) % 256, Ordering::Release);
+        self.event_tail.store((tail + 1) % EVENT_QUEUE_SIZE, Ordering::Release);
         self.events_processed.fetch_add(1, Ordering::Release);
         
         Some(event)
@@ -1096,9 +1119,11 @@ mod tests {
         ctrl.enable(true);
         ctrl.register_vm(1).unwrap();
         ctrl.enable_vmi(1).unwrap();
+        // Region: [0x1000000, 0x1001000) - size 4096
         ctrl.add_region(1, 0x1000000, 4096, (1 << bp_type::WRITE)).unwrap();
         
-        ctrl.handle_mem_access(1, 0x1001000, 0, bp_type::WRITE, 0);
+        // Access within the region (0x1000FFF is last byte in range)
+        ctrl.handle_mem_access(1, 0x1000FFF, 0, bp_type::WRITE, 0);
         
         let vm = ctrl.get_vm_state(1).unwrap();
         let region = &vm.regions[0];

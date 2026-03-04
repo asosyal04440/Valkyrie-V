@@ -26,11 +26,23 @@ pub mod trigger {
 }
 
 /// Maximum JIT code blocks
+#[cfg(not(test))]
 pub const MAX_JIT_BLOCKS: usize = 4096;
+/// Maximum JIT code blocks (reduced for tests)
+#[cfg(test)]
+pub const MAX_JIT_BLOCKS: usize = 16;
 /// Maximum hot paths
+#[cfg(not(test))]
 pub const MAX_HOT_PATHS: usize = 1024;
+/// Maximum hot paths (reduced for tests)
+#[cfg(test)]
+pub const MAX_HOT_PATHS: usize = 16;
 /// JIT code buffer size
+#[cfg(not(test))]
 pub const JIT_CODE_BUFFER_SIZE: usize = 1024 * 1024; // 1MB
+/// JIT code buffer size (reduced for tests)
+#[cfg(test)]
+pub const JIT_CODE_BUFFER_SIZE: usize = 4096;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JIT Code Block
@@ -765,7 +777,7 @@ impl PerfProfiler {
         
         if !found {
             let count = self.entry_count.load(Ordering::Acquire);
-            if count as usize < MAX_PROFILE_ENTRIES {
+            if (count as usize) < MAX_PROFILE_ENTRIES {
                 let entry = &self.entries[count as usize];
                 entry.addr.store(addr, Ordering::Release);
                 entry.valid.store(true, Ordering::Release);

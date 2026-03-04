@@ -720,14 +720,14 @@ pub fn try_inject_pending_irq(svm: &mut Svm) -> bool {
 
     // Check if guest is interruptible (RFLAGS.IF set, no interrupt shadow)
     // Read RFLAGS from VMCB
-    let rflags = svm.vmcb.rflags;
+    let rflags = svm.vmcb().read_u64(vmcb_state::RFLAGS);
     let if_flag = (rflags & (1 << 9)) != 0;
     
     // Check interrupt shadow (V_IRQ in VMCB)
     // V_IRQ (bit 8) indicates if virtual interrupt is pending
     // V_IRQ_MASK (bit 24) indicates if interrupts are masked
-    let v_irq = (svm.vmcb.v_irq & 0xFF) != 0;
-    let v_int_state = svm.vmcb.v_int_state;
+    let v_irq = (svm.vmcb().read_u8(vmcb_ctrl::V_IRQ) & 0xFF) != 0;
+    let v_int_state = svm.vmcb().read_u8(vmcb_ctrl::V_INTR_MASKING);
     let int_shadow = (v_int_state & 0x1) != 0; // Interrupt shadow active
     
     // Guest is interruptible if:
@@ -737,7 +737,7 @@ pub fn try_inject_pending_irq(svm: &mut Svm) -> bool {
     if !if_flag || int_shadow || v_irq {
         // Guest is not interruptible
         // Set V_IRQ_MASK to trigger interrupt window exit
-        svm.vmcb.v_int_state |= 0x2; // Enable V_INTR_MASKING
+        svm.vmcb_mut().write_u8(vmcb_ctrl::V_INTR_MASKING, v_int_state | 0x2);
         return false;
     }
 

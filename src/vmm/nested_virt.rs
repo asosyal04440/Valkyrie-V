@@ -505,14 +505,15 @@ impl NestedController {
             return Err(HvError::LogicalFault);
         }
         
-        let vmcs = &self.vmcs[vmcs_idx as usize];
-        if vmcs.launched.load(Ordering::Acquire) {
+        // Extract values first to avoid borrow conflicts
+        let launched = self.vmcs[vmcs_idx as usize].launched.load(Ordering::Acquire);
+        if launched {
             return Err(HvError::LogicalFault); // Use VMRESUME
         }
         
         // Create L2 VM
         let l2_id = self.create_l2_vm(l1_vm_id, vmcs_idx)?;
-        vmcs.launch();
+        self.vmcs[vmcs_idx as usize].launch();
         
         self.active_l2.store(l2_id, Ordering::Release);
         self.nested_entries.fetch_add(1, Ordering::Release);

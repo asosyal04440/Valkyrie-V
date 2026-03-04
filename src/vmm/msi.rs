@@ -304,43 +304,10 @@ impl MsixTable {
 
 /// Per-vCPU pending IRQ storage
 /// Each vCPU has its own pending IRQ vector.
-pub static VCPU_PENDING_IRQ: [core::sync::atomic::AtomicU8; 64] = [
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-    core::sync::atomic::AtomicU8::new(0), core::sync::atomic::AtomicU8::new(0),
-];
+pub static VCPU_PENDING_IRQ: [core::sync::atomic::AtomicU8; 64] = {
+    const INIT: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+    [INIT; 64]
+};
 
 /// Delivery modes
 pub mod delivery {
@@ -374,7 +341,7 @@ pub fn deliver_msi(msg: &MsiMessage) {
     match delivery_mode {
         delivery::FIXED => {
             // Fixed delivery: target specific vCPU(s)
-            if msg.dest_mode == 0 {
+            if msg.dest_mode == false {
                 // Physical mode: dest_id is APIC ID
                 let vcpu_id = dest_id as usize;
                 if vcpu_id < 64 {
@@ -450,7 +417,7 @@ pub fn deliver_msi(msg: &MsiMessage) {
             // NMI: deliver as non-maskable interrupt
             // Use vector 2 (NMI vector) or the specified vector
             let nmi_vector = if msg.vector == 2 { 2 } else { 2 };
-            if msg.dest_mode == 0 {
+            if msg.dest_mode == false {
                 let vcpu_id = dest_id as usize;
                 if vcpu_id < 64 {
                     let _ = VCPU_PENDING_IRQ[vcpu_id].compare_exchange(
@@ -488,7 +455,7 @@ pub fn deliver_msi(msg: &MsiMessage) {
             // - Set SMI pending flag for the target vCPU
             // - The VMX/SVM loop will handle the actual SMM entry
             
-            if msg.dest_mode == 0 {
+            if msg.dest_mode == false {
                 // Physical mode: target specific vCPU
                 let vcpu_id = dest_id as usize;
                 if vcpu_id < 64 {
@@ -528,7 +495,7 @@ pub fn deliver_msi(msg: &MsiMessage) {
             // 3. Reset APIC state
             // 4. Set instruction pointer to reset vector (0xFFFFFFF0)
             
-            if msg.dest_mode == 0 {
+            if msg.dest_mode == false {
                 // Physical mode: target specific vCPU
                 let vcpu_id = dest_id as usize;
                 if vcpu_id < 64 {

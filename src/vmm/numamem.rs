@@ -132,14 +132,14 @@ impl NumaNode {
 
     /// Set distance to another node
     pub fn set_distance(&self, target_node: u8, distance: u8) {
-        if target_node as usize < MAX_NUMA_NODES {
+        if (target_node as usize) < MAX_NUMA_NODES {
             self.distances[target_node as usize].store(distance, Ordering::Release);
         }
     }
 
     /// Get distance to another node
     pub fn get_distance(&self, target_node: u8) -> u8 {
-        if target_node as usize < MAX_NUMA_NODES {
+        if (target_node as usize) < MAX_NUMA_NODES {
             self.distances[target_node as usize].load(Ordering::Acquire)
         } else {
             255
@@ -492,7 +492,7 @@ impl NumaController {
 
     /// Set node distance
     pub fn set_distance(&self, from_node: u8, to_node: u8, distance: u8) {
-        if from_node as usize < MAX_NUMA_NODES {
+        if (from_node as usize) < MAX_NUMA_NODES {
             self.nodes[from_node as usize].set_distance(to_node, distance);
         }
     }
@@ -575,12 +575,14 @@ impl NumaController {
                     numa_policy::BIND => {
                         // Use first allowed node
                         let mask = p.node_mask.load(Ordering::Acquire);
+                        let mut target = 0u8;
                         for i in 0..MAX_NUMA_NODES as u8 {
                             if (mask & (1 << i)) != 0 {
-                                break i;
+                                target = i;
+                                break;
                             }
                         }
-                        0
+                        target
                     }
                     numa_policy::INTERLEAVE => {
                         p.get_interleave_node()

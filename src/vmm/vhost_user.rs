@@ -175,7 +175,7 @@ pub struct VhostVringState {
     /// Kick eventfd index
     pub kick_fd: AtomicU8,
     /// Call eventfd index
-    pub call_fd: AtomicU8;
+    pub call_fd: AtomicU8,
     /// Error eventfd index
     pub err_fd: AtomicU8,
     /// Enabled
@@ -810,6 +810,7 @@ pub struct VhostControllerStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vmm::virtio_mq::device_type;
 
     #[test]
     fn create_device() {
@@ -822,13 +823,15 @@ mod tests {
 
     #[test]
     fn handle_get_features() {
-        let ctrl = VhostController::new();
-        let device = &ctrl.devices[0];
-        device.init(1, 1, device_type::NET);
+        let mut ctrl = VhostController::new();
+        ctrl.enable(true, false);
+        
+        let device_id = ctrl.create_device(1, device_type::NET).unwrap();
+        let device = ctrl.get_device(device_id).unwrap();
         device.set_features(0xFFFF);
         
         let payload = VhostMsgPayload::new();
-        let features = ctrl.handle_message(1, vhost_req::GET_FEATURES, &payload).unwrap();
+        let features = ctrl.handle_message(device_id, vhost_req::GET_FEATURES, &payload).unwrap();
         
         assert_eq!(features, 0xFFFF);
     }
@@ -836,11 +839,13 @@ mod tests {
     #[test]
     fn memory_region() {
         let region = VhostMemRegion::new();
-        region.init(0x1000000, 0x10000000, 0x2000000, 0);
+        // gpa=0x1000000, size=0x1000000 (16MB), hva=0x2000000
+        // Range is [0x1000000, 0x2000000)
+        region.init(0x1000000, 0x1000000, 0x2000000, 0);
         
-        assert!(region.contains(0x1000000));
-        assert!(region.contains(0x1FFFFFF));
-        assert!(!region.contains(0x2000000));
+        assert!(region.contains(0x1000000)); // Start
+        assert!(region.contains(0x1FFFFFF)); // Last byte in range
+        assert!(!region.contains(0x2000000)); // First byte outside range
         
         let hva = region.translate(0x1001000).unwrap();
         assert_eq!(hva, 0x2001000);

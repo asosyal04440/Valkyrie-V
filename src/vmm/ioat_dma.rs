@@ -10,13 +10,25 @@ use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU16, AtomicU8, AtomicBool, 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Maximum DMA channels
+#[cfg(not(test))]
 pub const MAX_DMA_CHANNELS: usize = 32;
+/// Maximum DMA channels (reduced for tests)
+#[cfg(test)]
+pub const MAX_DMA_CHANNELS: usize = 4;
 
 /// Maximum DMA descriptors
+#[cfg(not(test))]
 pub const MAX_DMA_DESCRIPTORS: usize = 4096;
+/// Maximum DMA descriptors (reduced for tests)
+#[cfg(test)]
+pub const MAX_DMA_DESCRIPTORS: usize = 16;
 
 /// Maximum pending operations
+#[cfg(not(test))]
 pub const MAX_PENDING_OPS: usize = 1024;
+/// Maximum pending operations (reduced for tests)
+#[cfg(test)]
+pub const MAX_PENDING_OPS: usize = 16;
 
 /// DMA operation types
 pub mod dma_op_type {
@@ -874,16 +886,16 @@ mod tests {
         ctrl.enable(3, 16 * 1024 * 1024);
         ctrl.register_channel(0xFE000000, 0).unwrap();
         
-        let channel = ctrl.get_channel(0).unwrap();
-        channel.enable();
-        channel.start();
+        // Enable channel first
+        ctrl.get_channel(0).unwrap().enable();
+        ctrl.get_channel(0).unwrap().start();
         
         // Submit and manually complete
         let op_id = ctrl.memcpy(0x1000000, 0x2000000, 8192, 1, dma_priority::NORMAL).unwrap();
         
         // Simulate completion
         let desc_idx = ctrl.operations[0].desc_idx.load(Ordering::Acquire);
-        channel.descriptors[desc_idx as usize].set_status(1);
+        ctrl.get_channel(0).unwrap().descriptors[desc_idx as usize].set_status(1);
         
         let completed = ctrl.process_completions();
         assert!(completed > 0);

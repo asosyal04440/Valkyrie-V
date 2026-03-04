@@ -689,6 +689,10 @@ mod tests {
         let rss = RssConfig::new();
         rss.configure(rss_hash::IPV4, 2).unwrap();
         
+        // Set a non-zero hash key (default is all zeros which produces 0 hash)
+        let key: [u8; 40] = core::array::from_fn(|i| (i + 1) as u8);
+        rss.set_hash_key(&key);
+        
         let hash = rss.calculate_hash(&[1, 2, 3, 4, 5, 6, 7, 8]);
         assert_ne!(hash, 0);
     }

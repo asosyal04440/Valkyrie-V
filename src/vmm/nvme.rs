@@ -759,7 +759,7 @@ impl NvmePassthrough {
         
         let queue = &self.queues[qid as usize];
         queue.sq_gpa.store(cmd.prp1, Ordering::Release);
-        queue.sq_size.store(qsize, Ordering::Release);
+        queue.sq_size.store(qsize as u16, Ordering::Release);
         queue.qid.store(qid, Ordering::Release);
         queue.enabled.store(true, Ordering::Release);
         
@@ -778,7 +778,7 @@ impl NvmePassthrough {
         
         let queue = &self.queues[qid as usize];
         queue.cq_gpa.store(cmd.prp1, Ordering::Release);
-        queue.cq_size.store(qsize, Ordering::Release);
+        queue.cq_size.store(qsize as u16, Ordering::Release);
         queue.phase.store(1, Ordering::Release);
         
         (status::SUCCESS, 0)

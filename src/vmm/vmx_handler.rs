@@ -6,6 +6,7 @@ use crate::vmm::{
 };
 use core::cell::UnsafeCell;
 use core::mem::{align_of, size_of};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use ironshim::{
     validate_driver_abi, AbiFeatures, AllowAllPolicy, DriverAbi, DriverAbiDescriptor, IoPortDesc,
     MmioDesc, PortIo, ResourceManifest, ABI_VERSION,

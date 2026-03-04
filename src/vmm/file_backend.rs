@@ -167,7 +167,7 @@ impl FileBackend {
             winapi::um::fileapi::GetFileSize(handle, &mut size_high as *mut _ as *mut u32)
         };
         
-        if size_low == winapi::um::errhandlingapi::INVALID_FILE_SIZE {
+        if size_low == winapi::um::fileapi::INVALID_FILE_SIZE {
             unsafe { winapi::um::handleapi::CloseHandle(handle); }
             self.errors.fetch_add(1, Ordering::Relaxed);
             return false;
@@ -243,7 +243,7 @@ impl FileBackend {
 
     #[cfg(target_os = "windows")]
     pub fn read(&mut self, sector: u64, buf: &mut [u8]) -> usize {
-        let handle = self.fd.load(Ordering::Acquire) as *mut _;
+        let handle = self.fd.load(Ordering::Acquire) as *mut winapi::ctypes::c_void;
         if handle.is_null() {
             return 0;
         }
@@ -260,8 +260,9 @@ impl FileBackend {
         
         unsafe {
             let mut overlapped: winapi::um::minwinbase::OVERLAPPED = core::mem::zeroed();
-            overlapped.Offset = offset as u32;
-            overlapped.OffsetHigh = (offset >> 32) as u32;
+            // Set offset via pointer cast - OVERLAPPED uses internal union
+            let offset_ptr = &mut overlapped.Internal as *mut _ as *mut u64;
+            core::ptr::write_unaligned(offset_ptr, offset);
             
             if winapi::um::fileapi::ReadFile(
                 handle,
@@ -325,7 +326,7 @@ impl FileBackend {
             return 0;
         }
         
-        let handle = self.fd.load(Ordering::Acquire) as *mut _;
+        let handle = self.fd.load(Ordering::Acquire) as *mut winapi::ctypes::c_void;
         if handle.is_null() {
             return 0;
         }
@@ -335,8 +336,9 @@ impl FileBackend {
         
         unsafe {
             let mut overlapped: winapi::um::minwinbase::OVERLAPPED = core::mem::zeroed();
-            overlapped.Offset = offset as u32;
-            overlapped.OffsetHigh = (offset >> 32) as u32;
+            // Set offset via pointer cast - OVERLAPPED uses internal union
+            let offset_ptr = &mut overlapped.Internal as *mut _ as *mut u64;
+            core::ptr::write_unaligned(offset_ptr, offset);
             
             if winapi::um::fileapi::WriteFile(
                 handle,
@@ -372,7 +374,7 @@ impl FileBackend {
 
     #[cfg(target_os = "windows")]
     pub fn flush(&mut self) -> bool {
-        let handle = self.fd.load(Ordering::Acquire) as *mut _;
+        let handle = self.fd.load(Ordering::Acquire) as *mut winapi::ctypes::c_void;
         if handle.is_null() {
             return false;
         }
@@ -436,6 +438,6 @@ mod tests {
     #[test]
     fn file_backend_with_path() {
         let backend = FileBackend::new().with_path("/tmp/test.img");
-        assert_eq!(&backend.path[..11], b"/tmp/test.");
+        assert_eq!(&backend.path[..13], b"/tmp/test.img");
     }
 }

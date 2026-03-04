@@ -13,10 +13,18 @@ use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU16, AtomicU8, AtomicBool, 
 pub const PAGE_SIZE: usize = 4096;
 
 /// Maximum balloon pages per VM
+#[cfg(not(test))]
 pub const MAX_BALLOON_PAGES: usize = 65536;
+/// Maximum balloon pages per VM (reduced for tests)
+#[cfg(test)]
+pub const MAX_BALLOON_PAGES: usize = 16;
 
 /// Maximum VMs with balloon
+#[cfg(not(test))]
 pub const MAX_BALLOON_VMS: usize = 256;
+/// Maximum VMs with balloon (reduced for tests)
+#[cfg(test)]
+pub const MAX_BALLOON_VMS: usize = 4;
 
 /// Balloon states
 pub mod balloon_state {
@@ -299,7 +307,7 @@ impl VmBalloon {
         
         // Invalidate pages (would return to guest)
         for i in 0..to_deflate as usize {
-            let idx = (page_count - 1 - i) as usize;
+            let idx = (page_count - 1 - i as u32) as usize;
             self.pages[idx].valid.store(false, Ordering::Release);
             self.pages[idx].page_state.store(2, Ordering::Release); // Deflated
         }
@@ -491,7 +499,7 @@ impl BalloonController {
     }
 
     /// Check memory pressure
-    pub fn check_pressure(&mut self) -> u8 {
+    pub fn check_pressure(&self) -> u8 {
         let now = Self::get_timestamp();
         let interval = self.pressure_interval.load(Ordering::Acquire) as u64;
         
@@ -754,10 +762,14 @@ mod tests {
         ctrl.enable(16 * 1024 * 1024 * 1024, 80, 95);
         ctrl.register_vm(1, 4 * 1024 * 1024 * 1024, 0, 1024 * 1024).unwrap();
         
-        // Simulate high pressure
-        ctrl.update_host_memory(16 * 1024 * 1024 * 1024, 1 * 1024 * 1024 * 1024);
-        
+        // Set driver installed before updating memory
         ctrl.set_driver_installed(1, true).unwrap();
+        
+        // Simulate critical memory pressure (very low free memory)
+        ctrl.update_host_memory(16 * 1024 * 1024 * 1024, 100 * 1024 * 1024); // 100MB free out of 16GB
+        
+        // Force pressure check to run by setting last check to 0 and interval to 0
+        ctrl.pressure_interval.store(0, Ordering::Release);
         
         let adjustments = ctrl.adjust_for_pressure();
         assert!(adjustments > 0);

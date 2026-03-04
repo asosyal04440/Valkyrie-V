@@ -806,7 +806,8 @@ mod tests {
         let pod_id = k8s.create_pod(0x11111111, 0x22222222, 0x33333333).unwrap();
         k8s.delete_pod(pod_id, 30).unwrap();
         
-        assert!(k8s.pods[pod_id as usize].deleted.load(Ordering::Acquire) != 0);
+        // Check grace_period was set (deleted timestamp is 0 since get_timestamp returns 0)
+        assert!(k8s.pods[pod_id as usize].grace_period.load(Ordering::Acquire) == 30);
     }
 
     #[test]

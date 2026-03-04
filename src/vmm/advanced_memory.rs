@@ -368,7 +368,11 @@ impl DedupBucket {
 }
 
 /// Maximum dedup buckets
+#[cfg(not(test))]
 pub const MAX_DEDUP_BUCKETS: usize = 65536;
+/// Maximum dedup buckets (reduced for tests)
+#[cfg(test)]
+pub const MAX_DEDUP_BUCKETS: usize = 64;
 
 /// Memory deduplication controller
 pub struct MemoryDedup {

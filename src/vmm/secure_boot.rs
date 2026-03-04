@@ -36,7 +36,7 @@ pub enum SecureBootMode {
 
 /// Signature types
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u16)]
+#[repr(u32)]
 pub enum SignatureType {
     /// SHA-256 hash
     Sha256 = 0xC1C41626,
@@ -724,11 +724,16 @@ impl MeasuredBootController {
         };
         
         // Create event data with name
-        let mut event_data: Vec<u8, 256> = name.as_bytes().to_vec();
-        event_data.extend_from_slice(data);
+        let mut event_data: [u8; 256] = [0; 256];
+        let name_bytes = name.as_bytes();
+        let name_len = name_bytes.len().min(128);
+        event_data[..name_len].copy_from_slice(&name_bytes[..name_len]);
+        let data_len = data.len().min(128);
+        event_data[name_len..name_len + data_len].copy_from_slice(&data[..data_len]);
+        let total_len = name_len + data_len;
         
         // Measure
-        self.tpm.measure_event(pcr, event_type, &event_data)
+        self.tpm.measure_event(pcr, event_type, &event_data[..total_len])
     }
 
     /// Verify boot chain

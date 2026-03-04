@@ -307,6 +307,11 @@ impl GuestMemory {
         self.memory_limit
     }
 
+    /// Return the allocated bytes (approximation based on next_alloc).
+    pub fn allocated_bytes(&self) -> u64 {
+        self.next_alloc.saturating_sub(GUEST_MEMORY_BASE)
+    }
+
     /// Zero a range of guest physical memory.
     ///
     /// This is important for security — prevents information leakage

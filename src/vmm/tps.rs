@@ -16,13 +16,25 @@ pub const PAGE_SIZE: usize = 4096;
 pub const SUB_PAGE_SIZE: usize = 256; // 16 blocks per 4K page
 
 /// Maximum shared pages
+#[cfg(not(test))]
 pub const MAX_SHARED_PAGES: usize = 131072;
+/// Maximum shared pages (reduced for tests)
+#[cfg(test)]
+pub const MAX_SHARED_PAGES: usize = 64;
 
 /// Maximum hash buckets
+#[cfg(not(test))]
 pub const MAX_HASH_BUCKETS: usize = 65536;
+/// Maximum hash buckets (reduced for tests)
+#[cfg(test)]
+pub const MAX_HASH_BUCKETS: usize = 64;
 
 /// Maximum VMs for salting
+#[cfg(not(test))]
 pub const MAX_VMS_SALTED: usize = 256;
+/// Maximum VMs for salting (reduced for tests)
+#[cfg(test)]
+pub const MAX_VMS_SALTED: usize = 4;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Page Hash Entry

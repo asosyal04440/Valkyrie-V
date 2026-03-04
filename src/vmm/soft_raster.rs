@@ -16,7 +16,7 @@
 
 use crate::vmm::shader_translator::{echo_op, EchosBytecode};
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 #[inline]
 fn f32_sqrt(v: f32) -> f32 {
@@ -414,8 +414,9 @@ pub fn execute_shader(bc: &EchosBytecode, input: &RegFile) -> RegFile {
         let s0 = instr.src0 as usize % REG_COUNT;
         let s1 = instr.src1 as usize % REG_COUNT;
         let s2 = instr.src2 as usize % REG_COUNT;
+        let op = instr.op;
 
-        match instr.op {
+        match op {
             op if op == echo_op::NOP => {}
             op if op == echo_op::MOV => {
                 regs.r[dst] = regs.r[s0];
@@ -530,7 +531,7 @@ pub fn execute_shader(bc: &EchosBytecode, input: &RegFile) -> RegFile {
                 ];
                 
                 let log_idx = UNSUPPORTED_OP_COUNT.load(Ordering::Relaxed) as usize % 16;
-                UNSUPPORTED_OP_LOG[log_idx].store(op, Ordering::Relaxed);
+                UNSUPPORTED_OP_LOG[log_idx].store(op as u32, Ordering::Relaxed);
             }
         }
     }
@@ -1125,11 +1126,9 @@ mod tests {
         const FENCE_MARK: u32 = 0xBEEF;
         let before_seq = completion_latest_seq();
 
-        let cmd = UGCommand {
-            kind: UGCommandKind::Fence,
-            _pad: [0; 3],
-            p: UGPayload::fence(FENCE_MARK as u64),
-        };
+        let mut cmd = UGCommand::default();
+        cmd.kind = UGCommandKind::Fence;
+        cmd.p = UGPayload::fence(FENCE_MARK as u64);
         assert!(
             GPU_QUEUE.submit(GpuQueuePriority::High, core::slice::from_ref(&cmd)),
             "GPU_QUEUE high ring should not be full"

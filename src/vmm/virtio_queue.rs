@@ -127,6 +127,21 @@ impl DescChainIter {
         }
         n
     }
+
+    /// Count remaining elements in the chain (consumes the iterator).
+    pub fn count_remaining(self) -> usize {
+        self.count()
+    }
+
+    /// Check if the iterator has yielded any elements yet.
+    pub fn is_empty(&self) -> bool {
+        self.count == 0 && self.current.is_none()
+    }
+
+    /// Get the number of elements yielded so far.
+    pub fn yielded_count(&self) -> usize {
+        self.count
+    }
 }
 
 impl Iterator for DescChainIter {

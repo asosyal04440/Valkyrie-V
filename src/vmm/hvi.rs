@@ -803,7 +803,7 @@ mod tests {
         
         // Write to protected region should fail
         let result = ctrl.check_access(0x1000100, prot_type::WRITE);
-        assert!(result.is_err() || result == Ok(false));
+        assert!(result.is_err() || result.ok() == Some(false));
         
         let stats = ctrl.get_stats();
         assert!(stats.total_violations > 0);

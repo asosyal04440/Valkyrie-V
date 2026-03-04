@@ -918,7 +918,7 @@ mod tests {
     #[test]
     fn ecap_decode() {
         // Sample extended capability
-        let ecap = 0x0000_0050_0000_0000;
+        let ecap: u64 = 0x0000_0050_0000_0000;
         // These are hardware-dependent
     }
 

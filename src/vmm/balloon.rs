@@ -195,24 +195,27 @@ mod tests {
     fn balloon_inflate_deflate() {
         let balloon = BalloonDriver::new();
         
-        // Inflate by 100 pages
-        balloon.inflate(100).unwrap();
-        assert_eq!(balloon.target_pages.load(Ordering::Acquire), 100);
+        // Inflate by 512 pages (above min of 256)
+        balloon.inflate(512).unwrap();
+        assert_eq!(balloon.target_pages.load(Ordering::Acquire), 512);
         
-        // Deflate by 50 pages
-        balloon.deflate(50).unwrap();
-        assert_eq!(balloon.target_pages.load(Ordering::Acquire), 50);
+        // Simulate guest responding to inflate
+        balloon.update_actual(512);
+        
+        // Deflate by 256 pages (staying above min of 256)
+        balloon.deflate(256).unwrap();
+        assert_eq!(balloon.target_pages.load(Ordering::Acquire), 256);
     }
 
     #[test]
     fn balloon_respects_limits() {
         let balloon = BalloonDriver::new();
         
-        // Should fail to inflate beyond max
+        // Should fail to inflate beyond max (65536)
         assert!(balloon.inflate(100_000).is_err());
         
-        // Should fail to deflate below min
-        assert!(balloon.deflate(1000).is_err());
+        // Should fail to deflate below min (256) - starting from 0, deflate would go negative
+        assert!(balloon.deflate(1).is_err());
     }
 
     #[test]
@@ -222,6 +225,9 @@ mod tests {
         // Low host memory -> inflate
         balloon.check_pressure(10);
         assert!(balloon.target_pages.load(Ordering::Acquire) > 0);
+        
+        // Simulate guest responding to inflate
+        balloon.update_actual(balloon.target_pages.load(Ordering::Acquire));
         
         // High host memory -> deflate
         let before = balloon.target_pages.load(Ordering::Acquire);

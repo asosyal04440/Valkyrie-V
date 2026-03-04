@@ -417,18 +417,24 @@ impl BackupController {
         let mut run = 0u32;
         
         for i in 0..self.schedule_count.load(Ordering::Acquire) as usize {
-            let schedule = &self.schedules[i];
-            if schedule.should_run() {
+            // Extract all needed values first to avoid borrow conflicts
+            let (should_run, vm_id, backup_type, schedule_id) = {
+                let schedule = &self.schedules[i];
+                let should_run = schedule.should_run();
                 let vm_id = schedule.vm_id.load(Ordering::Acquire);
                 let backup_type = schedule.backup_type.load(Ordering::Acquire);
-                
-                if let Ok(backup_id) = self.create_backup(vm_id, backup_type, schedule.id.load(Ordering::Acquire)) {
+                let schedule_id = schedule.id.load(Ordering::Acquire);
+                (should_run, vm_id, backup_type, schedule_id)
+            };
+            
+            if should_run {
+                if let Ok(backup_id) = self.create_backup(vm_id, backup_type, schedule_id) {
                     // Start backup
                     self.backups[(backup_id - 1) as usize].start();
-                    schedule.mark_run();
+                    self.schedules[i].mark_run();
                     run += 1;
                 } else {
-                    schedule.mark_failed();
+                    self.schedules[i].mark_failed();
                 }
             }
         }

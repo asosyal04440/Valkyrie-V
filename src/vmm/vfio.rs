@@ -28,7 +28,7 @@
 use crate::vmm::shader_translator::SpirVBlob;
 use crate::vmm::ugir::{UGCommand, UGCommandKind};
 use crate::vmm::HvError;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 // ─── PCI config-space offsets ─────────────────────────────────────────────────
 
@@ -982,15 +982,15 @@ impl GpuDispatcher {
                 UGCommandKind::CopyBuffer => {
                     // Buffer copy - use MEM_OP_TIER_A opcode (simplified)
                     self.nvidia.push(0xC000_0042); // MEM_OP_TIER_A header
-                    self.nvidia.push(cmd.src_addr);
-                    self.nvidia.push(cmd.dst_addr);
-                    self.nvidia.push(cmd.size);
+                    self.nvidia.push(cmd.src_addr as u32);
+                    self.nvidia.push(cmd.dst_addr as u32);
+                    self.nvidia.push(cmd.size as u32);
                 }
                 UGCommandKind::CopyImage => {
                     // Image copy - simplified
                     self.nvidia.push(0xC000_0043); // MEM_OP_TIER_B header
-                    self.nvidia.push(cmd.src_addr);
-                    self.nvidia.push(cmd.dst_addr);
+                    self.nvidia.push(cmd.src_addr as u32);
+                    self.nvidia.push(cmd.dst_addr as u32);
                 }
                 UGCommandKind::ClearImage => {
                     // Clear - use SET_CLEAR_COLOR opcode
@@ -1285,11 +1285,9 @@ mod tests {
     #[test]
     fn gpu_dispatcher_submit_soft_path() {
         let disp = GpuDispatcher::new_soft_rasterizer();
-        let cmd = UGCommand {
-            kind: UGCommandKind::Present,
-            _pad: [0; 3],
-            p: UGPayload::present(0),
-        };
+        let mut cmd = UGCommand::default();
+        cmd.kind = UGCommandKind::Present;
+        cmd.p = UGPayload::present(0);
         let fence = disp.submit_commands(core::slice::from_ref(&cmd));
         // Soft path should immediately signal the fence
         assert_eq!(fence, 1);

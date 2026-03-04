@@ -482,7 +482,7 @@ mod tests {
         // Header length
         data[8..12].copy_from_slice(&24u32.to_le_bytes());
         // Checksum (magic + arch + length + checksum = 0)
-        let checksum = !(MULTIBOOT2_MAGIC.wrapping_add(0x02).wrapping_add(24));
+        let checksum = 0u32.wrapping_sub(MULTIBOOT2_MAGIC.wrapping_add(0x02).wrapping_add(24));
         data[12..16].copy_from_slice(&checksum.to_le_bytes());
         // End tag
         data[16..20].copy_from_slice(&0u32.to_le_bytes());

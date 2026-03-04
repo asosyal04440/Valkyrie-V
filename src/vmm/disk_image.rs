@@ -110,7 +110,7 @@ impl Fat32Bpb {
 
         Self {
             jump_boot: [0xEB, 0x58, 0x90],
-            oem_name: *b"Valkyrie ",
+            oem_name: *b"Valkyrie",
             bytes_per_sector: 512,
             sectors_per_cluster,
             reserved_sectors: 32,
@@ -431,10 +431,15 @@ mod tests {
     #[test]
     fn mbr_partition_entry() {
         let entry = MbrPartitionEntry::bootable(partition_type::FAT32_LBA, 2048, 1024);
-        assert_eq!(entry.boot_indicator, 0x80);
-        assert_eq!(entry.partition_type, partition_type::FAT32_LBA);
-        assert_eq!(entry.starting_lba, 2048);
-        assert_eq!(entry.size_lba, 1024);
+        // Copy values from packed struct to avoid unaligned reference
+        let boot = entry.boot_indicator;
+        let ptype = entry.partition_type;
+        let start = entry.starting_lba;
+        let size = entry.size_lba;
+        assert_eq!(boot, 0x80);
+        assert_eq!(ptype, partition_type::FAT32_LBA);
+        assert_eq!(start, 2048);
+        assert_eq!(size, 1024);
     }
 
     #[test]

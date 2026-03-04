@@ -10,13 +10,25 @@ use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU16, AtomicU8, AtomicBool, 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Maximum concurrent live snapshots
+#[cfg(not(test))]
 pub const MAX_LIVE_SNAPSHOTS: usize = 64;
+/// Maximum concurrent live snapshots (reduced for tests)
+#[cfg(test)]
+pub const MAX_LIVE_SNAPSHOTS: usize = 4;
 
 /// Maximum memory regions
+#[cfg(not(test))]
 pub const MAX_MEM_REGIONS: usize = 32;
+/// Maximum memory regions (reduced for tests)
+#[cfg(test)]
+pub const MAX_MEM_REGIONS: usize = 4;
 
 /// Maximum dirty pages tracked
+#[cfg(not(test))]
 pub const MAX_DIRTY_PAGES: usize = 262144; // 1GB with 4KB pages
+/// Maximum dirty pages tracked (reduced for tests)
+#[cfg(test)]
+pub const MAX_DIRTY_PAGES: usize = 64;
 
 /// Page size
 pub const PAGE_SIZE: u64 = 4096;
@@ -227,8 +239,10 @@ impl MemRegion {
 
     /// Mark page dirty
     pub fn mark_dirty(&self, gpa: u64) -> bool {
-        let page_idx = self.get_page_idx(gpa)?;
-        self.dirty_bitmap.mark_dirty(page_idx)
+        match self.get_page_idx(gpa) {
+            Some(page_idx) => self.dirty_bitmap.mark_dirty(page_idx),
+            None => false,
+        }
     }
 
     /// Get dirty count
@@ -879,11 +893,11 @@ mod tests {
         let bitmap = DirtyBitmap::new();
         
         assert!(bitmap.mark_dirty(0));
-        assert!(bitmap.mark_dirty(100));
-        assert!(bitmap.mark_dirty(1000));
+        assert!(bitmap.mark_dirty(32));  // Within MAX_DIRTY_PAGES (64 in tests)
+        assert!(bitmap.mark_dirty(63));  // Max valid index
         
         assert!(bitmap.is_dirty(0));
-        assert!(bitmap.is_dirty(100));
+        assert!(bitmap.is_dirty(32));
         assert!(!bitmap.is_dirty(50));
         
         assert_eq!(bitmap.get_dirty_count(), 3);

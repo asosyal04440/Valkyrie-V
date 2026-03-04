@@ -7,6 +7,13 @@ edition = "2021"
 ironshim = { package = "ironshim-rs", git = "https://github.com/asosyal04440/IronShim-rs" }
 libm = "0.2"
 
+[dev-dependencies]
+proptest = "1.4"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["fileapi", "handleapi", "errhandlingapi", "minwinbase", "winbase", "winerror"] }
+
 [features]
 default = []
 baremetal-bin = []
@@ -37,4 +44,8 @@ required-features = ["baremetal-bin"]
 
 [[bench]]
 name = "micro_bench"
+harness = false
+
+[[bench]]
+name = "vmm_bench"
 harness = false

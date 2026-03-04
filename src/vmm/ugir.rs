@@ -242,9 +242,11 @@ pub enum UGCommandKind {
     DrawInstanced,
     DrawIndexedInstanced,
     Dispatch,
+    Draw,  // Compute-style draw
     ClearColor,
     ClearDepth,
     ClearStencil,
+    ClearImage,
     SetRenderTarget,
     SetDepthStencilTarget,
     SetShader,
@@ -257,8 +259,15 @@ pub enum UGCommandKind {
     SetPipelineState,
     CopyResource,
     CopySubresource,
+    CopyBuffer,
+    CopyImage,
     UpdateSubresource,
     ResolveSubresource,
+    Barrier,
+    BindPipeline,
+    BindDescriptor,
+    BindVertexBuffer,
+    BindIndexBuffer,
     Present,
     Fence,
 }
@@ -271,11 +280,60 @@ pub struct UGCommand {
     pub _pad: [u8; 3],
     /// Packed payload — interpretation depends on `kind`.
     pub p: UGPayload,
+    // Direct access fields for convenience
+    pub x: u32,
+    pub y: u32,
+    pub z: u32,
+    pub src_addr: u64,
+    pub dst_addr: u64,
+    pub size: u64,
+    pub clear_value: f32,
+    pub width: u32,
+    pub height: u32,
+    pub handle: UGHandle,
+    pub pipeline_id: u32,
+    pub descriptor_id: u32,
+    pub descriptor_set: u32,
+    pub binding: u32,
+    pub buffer_addr: u64,
+    pub stride: u32,
+    pub index_type: u32,
+    pub buffer_id: u32,
+    pub offset: u64,
 }
 
 impl core::fmt::Debug for UGCommand {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "UGCommand {{ kind: {:?} }}", self.kind)
+    }
+}
+
+impl Default for UGCommand {
+    fn default() -> Self {
+        Self {
+            kind: UGCommandKind::Nop,
+            _pad: [0; 3],
+            p: UGPayload::zeroed(),
+            x: 0,
+            y: 0,
+            z: 0,
+            src_addr: 0,
+            dst_addr: 0,
+            size: 0,
+            clear_value: 0.0,
+            width: 0,
+            height: 0,
+            handle: UGHandle::NULL,
+            pipeline_id: 0,
+            descriptor_id: 0,
+            descriptor_set: 0,
+            binding: 0,
+            buffer_addr: 0,
+            stride: 0,
+            index_type: 0,
+            buffer_id: 0,
+            offset: 0,
+        }
     }
 }
 
@@ -401,6 +459,25 @@ impl CommandBatch {
             kind: UGCommandKind::Nop,
             _pad: [0; 3],
             p: UGPayload { u64s: [0; 7] },
+            x: 0,
+            y: 0,
+            z: 0,
+            src_addr: 0,
+            dst_addr: 0,
+            size: 0,
+            clear_value: 0.0,
+            width: 0,
+            height: 0,
+            handle: UGHandle::NULL,
+            pipeline_id: 0,
+            descriptor_id: 0,
+            descriptor_set: 0,
+            binding: 0,
+            buffer_addr: 0,
+            stride: 0,
+            index_type: 0,
+            buffer_id: 0,
+            offset: 0,
         };
         Self {
             cmds: [NOP; BATCH_CMD_MAX],
@@ -602,6 +679,7 @@ impl DeltaStateTracker {
                 kind: UGCommandKind::SetShader,
                 _pad: [0; 3],
                 p: UGPayload::set_shader(UGHandle(self.current_vs), ShaderStage::Vertex),
+                ..UGCommand::default()
             });
         }
         if self.dirty_bits & DIRTY_PS != 0 && self.current_ps != u32::MAX {
@@ -609,6 +687,7 @@ impl DeltaStateTracker {
                 kind: UGCommandKind::SetShader,
                 _pad: [0; 3],
                 p: UGPayload::set_shader(UGHandle(self.current_ps), ShaderStage::Pixel),
+                ..UGCommand::default()
             });
         }
         if self.dirty_bits & DIRTY_RT != 0 {
@@ -616,6 +695,7 @@ impl DeltaStateTracker {
                 kind: UGCommandKind::SetRenderTarget,
                 _pad: [0; 3],
                 p: UGPayload::set_render_target(self.current_rt[0], 0),
+                ..UGCommand::default()
             });
         }
         if self.dirty_bits & DIRTY_VP != 0 {
@@ -623,6 +703,7 @@ impl DeltaStateTracker {
                 kind: UGCommandKind::SetViewport,
                 _pad: [0; 3],
                 p: UGPayload::set_viewport(self.current_vp),
+                ..UGCommand::default()
             });
         }
         self.dirty_bits = 0;
@@ -655,11 +736,9 @@ mod tests {
         let mut batch = CommandBatch::new();
         assert!(batch.is_empty());
 
-        let cmd = UGCommand {
-            kind: UGCommandKind::Present,
-            _pad: [0; 3],
-            p: UGPayload::present(0),
-        };
+        let mut cmd = UGCommand::default();
+        cmd.kind = UGCommandKind::Present;
+        cmd.p = UGPayload::present(0);
         assert!(batch.push(cmd));
         assert_eq!(batch.len(), 1);
 

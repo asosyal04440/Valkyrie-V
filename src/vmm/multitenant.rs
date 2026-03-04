@@ -361,11 +361,10 @@ impl MultiTenantController {
         
         // Find free slot
         for i in 0..MAX_TENANTS {
-            let tenant = &self.tenants[i];
-            if !tenant.valid.load(Ordering::Acquire) {
+            if !self.tenants[i].valid.load(Ordering::Acquire) {
                 let tenant_id = (i + 1) as u32; // 0 is invalid
                 let isolation = self.default_isolation_group.load(Ordering::Acquire);
-                tenant.init(tenant_id, priority, isolation);
+                self.tenants[i].init(tenant_id, priority, isolation);
                 self.tenant_count.fetch_add(1, Ordering::Release);
                 return Ok(tenant_id);
             }
@@ -427,7 +426,7 @@ impl MultiTenantController {
         
         let quota = &tenant.quotas[resource_type as usize];
         quota.allocate(amount)?;
-        tenant.update_usage(resource_type, amount);
+        // Note: quota.allocate already updates usage, no need to call update_usage
         
         Ok(())
     }
@@ -656,10 +655,30 @@ mod tests {
         let mut ctrl = MultiTenantController::new();
         let id = ctrl.create_tenant(128).unwrap();
         
-        ctrl.set_tenant_quota(id, resource::MEMORY, 1024, 0, enforce_mode::HARD).unwrap();
+        // Set quota limit to 1024 units
+        let result = ctrl.set_tenant_quota(id, resource::MEMORY, 1024, 0, enforce_mode::HARD);
+        assert!(result.is_ok(), "set_tenant_quota failed: {:?}", result);
         
-        assert!(ctrl.allocate_resource(id, resource::MEMORY, 512).is_ok());
-        assert!(ctrl.allocate_resource(id, resource::MEMORY, 512).is_ok());
+        // Verify quota was set
+        let tenant = ctrl.get_tenant(id).unwrap();
+        let quota = &tenant.quotas[resource::MEMORY as usize];
+        assert_eq!(quota.limit.load(Ordering::Acquire), 1024, "quota limit not set correctly");
+        assert_eq!(quota.enforce_mode.load(Ordering::Acquire), enforce_mode::HARD, "enforce mode not set");
+        
+        // Allocate 512 units - should succeed (512 <= 1024)
+        let result1 = ctrl.allocate_resource(id, resource::MEMORY, 512);
+        assert!(result1.is_ok(), "first allocation failed: {:?}", result1);
+        
+        // Check usage after first allocation
+        let usage_after_first = quota.usage.load(Ordering::Acquire);
+        assert_eq!(usage_after_first, 512, "usage after first allocation should be 512, got {}", usage_after_first);
+        
+        // Allocate another 512 units - should succeed (512 + 512 = 1024 <= 1024)
+        let result2 = ctrl.allocate_resource(id, resource::MEMORY, 512);
+        assert!(result2.is_ok(), "second allocation failed: usage={}, limit={}, amount=512", 
+                quota.usage.load(Ordering::Acquire), quota.limit.load(Ordering::Acquire));
+        
+        // Allocate 1 more unit - should fail (1024 + 1 > 1024)
         assert!(ctrl.allocate_resource(id, resource::MEMORY, 1).is_err());
     }
 
@@ -676,5 +695,310 @@ mod tests {
         
         tenant.remove_vm(1).unwrap();
         assert_eq!(tenant.vm_count.load(Ordering::Acquire), 1);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // COMPREHENSIVE BATTLE-TESTED TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// Test: Multiple tenants can be created and are independent
+    #[test]
+    fn multiple_tenants_independent() {
+        let mut ctrl = MultiTenantController::new();
+        
+        let id1 = ctrl.create_tenant(128).unwrap();
+        let id2 = ctrl.create_tenant(200).unwrap();
+        let id3 = ctrl.create_tenant(50).unwrap();
+        
+        // Each tenant should have different IDs
+        assert_ne!(id1, id2);
+        assert_ne!(id2, id3);
+        assert_ne!(id1, id3);
+        
+        // Set different quotas for each
+        ctrl.set_tenant_quota(id1, resource::MEMORY, 1000, 0, enforce_mode::HARD).unwrap();
+        ctrl.set_tenant_quota(id2, resource::MEMORY, 2000, 0, enforce_mode::HARD).unwrap();
+        ctrl.set_tenant_quota(id3, resource::MEMORY, 500, 0, enforce_mode::HARD).unwrap();
+        
+        // Allocate from each and verify isolation
+        ctrl.allocate_resource(id1, resource::MEMORY, 500).unwrap();
+        ctrl.allocate_resource(id2, resource::MEMORY, 1000).unwrap();
+        ctrl.allocate_resource(id3, resource::MEMORY, 250).unwrap();
+        
+        // Verify each tenant has correct usage
+        let t1 = ctrl.get_tenant(id1).unwrap();
+        let t2 = ctrl.get_tenant(id2).unwrap();
+        let t3 = ctrl.get_tenant(id3).unwrap();
+        
+        assert_eq!(t1.quotas[resource::MEMORY as usize].usage.load(Ordering::Acquire), 500);
+        assert_eq!(t2.quotas[resource::MEMORY as usize].usage.load(Ordering::Acquire), 1000);
+        assert_eq!(t3.quotas[resource::MEMORY as usize].usage.load(Ordering::Acquire), 250);
+    }
+
+    /// Test: Resource release works correctly
+    #[test]
+    fn resource_release() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        ctrl.set_tenant_quota(id, resource::MEMORY, 1000, 0, enforce_mode::HARD).unwrap();
+        
+        // Allocate then release
+        ctrl.allocate_resource(id, resource::MEMORY, 500).unwrap();
+        ctrl.release_resource(id, resource::MEMORY, 300);
+        
+        let tenant = ctrl.get_tenant(id).unwrap();
+        assert_eq!(tenant.quotas[resource::MEMORY as usize].usage.load(Ordering::Acquire), 200);
+        
+        // Can allocate again after release
+        ctrl.allocate_resource(id, resource::MEMORY, 800).unwrap(); // 200 + 800 = 1000
+    }
+
+    /// Test: Release more than allocated (saturating subtraction)
+    #[test]
+    fn release_saturating() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        ctrl.set_tenant_quota(id, resource::MEMORY, 1000, 0, enforce_mode::HARD).unwrap();
+        ctrl.allocate_resource(id, resource::MEMORY, 100).unwrap();
+        
+        // Release more than allocated - should not panic, should saturate
+        ctrl.release_resource(id, resource::MEMORY, 500);
+        
+        let tenant = ctrl.get_tenant(id).unwrap();
+        assert_eq!(tenant.quotas[resource::MEMORY as usize].usage.load(Ordering::Acquire), 0);
+    }
+
+    /// Test: Quota enforcement modes
+    #[test]
+    fn enforcement_modes() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        // SOFT mode - always allows allocation
+        ctrl.set_tenant_quota(id, resource::CPU, 100, 0, enforce_mode::SOFT).unwrap();
+        assert!(ctrl.allocate_resource(id, resource::CPU, 1000).is_ok()); // Over limit but SOFT
+        
+        // HARD mode - strict enforcement
+        ctrl.set_tenant_quota(id, resource::MEMORY, 100, 0, enforce_mode::HARD).unwrap();
+        assert!(ctrl.allocate_resource(id, resource::MEMORY, 50).is_ok());
+        assert!(ctrl.allocate_resource(id, resource::MEMORY, 100).is_err()); // Would exceed
+        
+        // BURST mode - uses burst limit
+        ctrl.set_tenant_quota(id, resource::DISK, 100, 200, enforce_mode::BURST).unwrap();
+        assert!(ctrl.allocate_resource(id, resource::DISK, 150).is_ok()); // Within burst
+    }
+
+    /// Test: Warning threshold detection
+    #[test]
+    fn warning_threshold() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        ctrl.set_tenant_quota(id, resource::MEMORY, 1000, 0, enforce_mode::HARD).unwrap();
+        
+        let tenant = ctrl.get_tenant(id).unwrap();
+        tenant.quotas[resource::MEMORY as usize].warn_threshold.store(80, Ordering::Release);
+        
+        // Allocate 50% - no warning
+        ctrl.allocate_resource(id, resource::MEMORY, 500).unwrap();
+        assert!(!tenant.quotas[resource::MEMORY as usize].check_warning());
+        
+        // Allocate another 40% - now at 90%, warning triggers
+        ctrl.allocate_resource(id, resource::MEMORY, 400).unwrap();
+        assert!(tenant.quotas[resource::MEMORY as usize].check_warning());
+    }
+
+    /// Test: Utilization calculation
+    #[test]
+    fn utilization_calculation() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        ctrl.set_tenant_quota(id, resource::MEMORY, 1000, 0, enforce_mode::HARD).unwrap();
+        
+        let tenant = ctrl.get_tenant(id).unwrap();
+        
+        assert_eq!(tenant.quotas[resource::MEMORY as usize].get_utilization(), 0);
+        
+        ctrl.allocate_resource(id, resource::MEMORY, 250).unwrap();
+        assert_eq!(tenant.quotas[resource::MEMORY as usize].get_utilization(), 25);
+        
+        ctrl.allocate_resource(id, resource::MEMORY, 250).unwrap();
+        assert_eq!(tenant.quotas[resource::MEMORY as usize].get_utilization(), 50);
+    }
+
+    /// Test: Multiple resource types per tenant
+    #[test]
+    fn multiple_resource_types() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        // Set quotas for different resources
+        ctrl.set_tenant_quota(id, resource::CPU, 100, 0, enforce_mode::HARD).unwrap();
+        ctrl.set_tenant_quota(id, resource::MEMORY, 1000, 0, enforce_mode::HARD).unwrap();
+        ctrl.set_tenant_quota(id, resource::DISK, 5000, 0, enforce_mode::HARD).unwrap();
+        ctrl.set_tenant_quota(id, resource::NETWORK, 2000, 0, enforce_mode::HARD).unwrap();
+        
+        // Allocate from each independently
+        ctrl.allocate_resource(id, resource::CPU, 50).unwrap();
+        ctrl.allocate_resource(id, resource::MEMORY, 500).unwrap();
+        ctrl.allocate_resource(id, resource::DISK, 2500).unwrap();
+        ctrl.allocate_resource(id, resource::NETWORK, 1000).unwrap();
+        
+        let tenant = ctrl.get_tenant(id).unwrap();
+        assert_eq!(tenant.quotas[resource::CPU as usize].usage.load(Ordering::Acquire), 50);
+        assert_eq!(tenant.quotas[resource::MEMORY as usize].usage.load(Ordering::Acquire), 500);
+        assert_eq!(tenant.quotas[resource::DISK as usize].usage.load(Ordering::Acquire), 2500);
+        assert_eq!(tenant.quotas[resource::NETWORK as usize].usage.load(Ordering::Acquire), 1000);
+    }
+
+    /// Test: Tenant isolation groups
+    #[test]
+    fn isolation_groups() {
+        let mut ctrl = MultiTenantController::new();
+        
+        let id1 = ctrl.create_tenant(128).unwrap();
+        let id2 = ctrl.create_tenant(128).unwrap();
+        
+        // Tenants can have different isolation groups set via init
+        let t1 = ctrl.get_tenant(id1).unwrap();
+        let t2 = ctrl.get_tenant(id2).unwrap();
+        
+        // Verify isolation_group field exists and can be read
+        let _g1 = t1.isolation_group.load(Ordering::Acquire);
+        let _g2 = t2.isolation_group.load(Ordering::Acquire);
+    }
+
+    /// Test: Tenant statistics
+    #[test]
+    fn tenant_statistics() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        ctrl.set_tenant_quota(id, resource::MEMORY, 1000, 0, enforce_mode::HARD).unwrap();
+        ctrl.allocate_resource(id, resource::MEMORY, 500).unwrap();
+        
+        let tenant = ctrl.get_tenant(id).unwrap();
+        tenant.add_vm(1).unwrap();
+        tenant.add_vm(2).unwrap();
+        
+        let stats = ctrl.get_tenant_stats(id).unwrap();
+        assert_eq!(stats.vm_count, 2);
+        assert_eq!(stats.quota_utilization[resource::MEMORY as usize], 50);
+    }
+
+    /// Test: Delete non-existent tenant fails
+    #[test]
+    fn delete_nonexistent_tenant() {
+        let mut ctrl = MultiTenantController::new();
+        assert!(ctrl.delete_tenant(999).is_err());
+    }
+
+    /// Test: Allocate to non-existent tenant fails
+    #[test]
+    fn allocate_nonexistent_tenant() {
+        let ctrl = MultiTenantController::new();
+        assert!(ctrl.allocate_resource(999, resource::MEMORY, 100).is_err());
+    }
+
+    /// Test: Quota with zero limit
+    #[test]
+    fn zero_limit_quota() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        ctrl.set_tenant_quota(id, resource::MEMORY, 0, 0, enforce_mode::HARD).unwrap();
+        
+        // Any allocation should fail with zero limit
+        assert!(ctrl.allocate_resource(id, resource::MEMORY, 1).is_err());
+    }
+
+    /// Test: Maximum tenants limit
+    #[test]
+    fn max_tenants_limit() {
+        let mut ctrl = MultiTenantController::new();
+        
+        // Create tenants up to limit
+        for _ in 0..MAX_TENANTS {
+            ctrl.create_tenant(128).unwrap();
+        }
+        
+        // Next should fail
+        assert!(ctrl.create_tenant(128).is_err());
+    }
+
+    /// Test: Maximum VMs per tenant
+    #[test]
+    fn max_vms_per_tenant() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        let tenant = ctrl.get_tenant(id).unwrap();
+        
+        // Add VMs up to limit
+        for i in 0..MAX_VMS_PER_TENANT {
+            tenant.add_vm(i as u32).unwrap();
+        }
+        
+        // Next should fail
+        assert!(tenant.add_vm(999).is_err());
+    }
+
+    /// Test: Over limit counter increments
+    #[test]
+    fn over_limit_counter() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        ctrl.set_tenant_quota(id, resource::MEMORY, 100, 0, enforce_mode::HARD).unwrap();
+        
+        // Attempt allocations that exceed limit
+        let _ = ctrl.allocate_resource(id, resource::MEMORY, 200);
+        let _ = ctrl.allocate_resource(id, resource::MEMORY, 200);
+        let _ = ctrl.allocate_resource(id, resource::MEMORY, 200);
+        
+        let tenant = ctrl.get_tenant(id).unwrap();
+        assert_eq!(tenant.quotas[resource::MEMORY as usize].over_limit_count.load(Ordering::Acquire), 3);
+    }
+
+    /// Test: Tenant priority affects scheduling hints
+    #[test]
+    fn tenant_priority() {
+        let mut ctrl = MultiTenantController::new();
+        
+        let id_low = ctrl.create_tenant(50).unwrap();   // Low priority
+        let id_high = ctrl.create_tenant(200).unwrap(); // High priority
+        
+        let t_low = ctrl.get_tenant(id_low).unwrap();
+        let t_high = ctrl.get_tenant(id_high).unwrap();
+        
+        assert_eq!(t_low.priority.load(Ordering::Acquire), 50);
+        assert_eq!(t_high.priority.load(Ordering::Acquire), 200);
+    }
+
+    /// Test: Tenant state transitions
+    #[test]
+    fn tenant_state_transitions() {
+        let mut ctrl = MultiTenantController::new();
+        let id = ctrl.create_tenant(128).unwrap();
+        
+        let tenant = ctrl.get_tenant(id).unwrap();
+        
+        // Initial state should be ACTIVE
+        assert_eq!(tenant.state.load(Ordering::Acquire), tenant_state::ACTIVE);
+        
+        // Suspend
+        tenant.suspend();
+        assert_eq!(tenant.state.load(Ordering::Acquire), tenant_state::SUSPENDED);
+        
+        // Cannot allocate when suspended
+        ctrl.set_tenant_quota(id, resource::MEMORY, 1000, 0, enforce_mode::HARD).unwrap();
+        assert!(ctrl.allocate_resource(id, resource::MEMORY, 100).is_err());
+        
+        // Resume - should activate
+        tenant.resume();
+        assert_eq!(tenant.state.load(Ordering::Acquire), tenant_state::ACTIVE);
     }
 }

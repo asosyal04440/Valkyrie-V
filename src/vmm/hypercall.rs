@@ -237,8 +237,10 @@ impl DefaultHypercallHandler {
         
         // Query actual memory info from GuestMemory if available
         let (total_kb, free_kb) = if let Some(guest_mem) = ctx.guest_mem {
-            let total = guest_mem.memory_limit() / 1024;
-            let used = guest_mem.allocated_bytes() / 1024;
+            // guest_mem is a raw pointer, need unsafe deref
+            let gm = unsafe { &*guest_mem };
+            let total = gm.memory_limit() / 1024;
+            let used = gm.allocated_bytes() / 1024;
             (total, total.saturating_sub(used))
         } else {
             // Fallback: estimate based on vcpu_count
@@ -324,7 +326,7 @@ mod tests {
 
     #[test]
     fn get_vcpu_count() {
-        let handler = DefaultHypercallHandler::new().with_vcpu_count(4);
+        let mut handler = DefaultHypercallHandler::new().with_vcpu_count(4);
         let ctx = HypercallContext::new(hypercall::GET_VCPU_COUNT, [0; 6]);
         assert_eq!(handler.handle(&ctx), 4);
     }

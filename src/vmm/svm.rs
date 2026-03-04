@@ -769,7 +769,7 @@ impl Svm {
     }
 
     /// Get mutable reference to this VM's VMCB
-    fn vmcb_mut(&mut self) -> &mut VmcbPage {
+    pub fn vmcb_mut(&mut self) -> &mut VmcbPage {
         unsafe { &mut VMCB_PAGES[self.slot] }
     }
 
@@ -941,18 +941,12 @@ impl Svm {
         Ok(())
     }
 
+    /// Run the guest (test stub)
     #[cfg(test)]
     pub fn run(&mut self) -> Result<(), HvError> {
+        // Stub for tests - simulate successful VMRUN
         self.launched = true;
         Ok(())
-    }
-
-    /// Inject an interrupt into the guest
-    pub fn inject_interrupt(&mut self, vector: u8) {
-        let vmcb = self.vmcb_mut();
-        vmcb.write_u8(vmcb_ctrl::V_IRQ, 1);
-        vmcb.write_u8(vmcb_ctrl::V_INTR_VECTOR, vector);
-        vmcb.write_u8(vmcb_ctrl::V_INTR_PRIO, 0xF); // Highest priority
     }
 
     /// Advance RIP by instruction length (using NRIP if available)

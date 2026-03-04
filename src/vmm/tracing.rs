@@ -10,25 +10,53 @@ use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU16, AtomicU8, AtomicBool, 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Maximum programs
+#[cfg(not(test))]
 pub const MAX_PROGRAMS: usize = 128;
+/// Maximum programs (reduced for tests)
+#[cfg(test)]
+pub const MAX_PROGRAMS: usize = 4;
 
 /// Maximum maps
+#[cfg(not(test))]
 pub const MAX_MAPS: usize = 64;
+/// Maximum maps (reduced for tests)
+#[cfg(test)]
+pub const MAX_MAPS: usize = 4;
 
 /// Maximum events
+#[cfg(not(test))]
 pub const MAX_EVENTS: usize = 4096;
+/// Maximum events (reduced for tests)
+#[cfg(test)]
+pub const MAX_EVENTS: usize = 64;
 
 /// Maximum event handlers
+#[cfg(not(test))]
 pub const MAX_HANDLERS: usize = 32;
+/// Maximum event handlers (reduced for tests)
+#[cfg(test)]
+pub const MAX_HANDLERS: usize = 4;
 
 /// Maximum instructions per program
+#[cfg(not(test))]
 pub const MAX_INSTRUCTIONS: usize = 256;
+/// Maximum instructions per program (reduced for tests)
+#[cfg(test)]
+pub const MAX_INSTRUCTIONS: usize = 16;
 
 /// Maximum map entries
+#[cfg(not(test))]
 pub const MAX_MAP_ENTRIES: usize = 4096;
+/// Maximum map entries (reduced for tests)
+#[cfg(test)]
+pub const MAX_MAP_ENTRIES: usize = 16;
 
 /// Maximum ring buffer size (entries)
+#[cfg(not(test))]
 pub const MAX_RING_BUFFER: usize = 8192;
+/// Maximum ring buffer size (reduced for tests)
+#[cfg(test)]
+pub const MAX_RING_BUFFER: usize = 64;
 
 /// Program types
 pub mod prog_type {
@@ -104,6 +132,7 @@ pub mod prog_state {
 
 /// Tracing instruction
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct Instruction {
     /// Opcode
     pub opcode: u8,
@@ -523,7 +552,7 @@ impl TraceProgram {
     }
 
     /// Add instruction
-    pub fn add_instruction(&self, instr: Instruction) -> Result<(), HvError> {
+    pub fn add_instruction(&mut self, instr: Instruction) -> Result<(), HvError> {
         let count = self.instr_count.load(Ordering::Acquire);
         if count as usize >= MAX_INSTRUCTIONS {
             return Err(HvError::LogicalFault);
@@ -774,14 +803,13 @@ impl TracingController {
         }
         
         let prog_id = self.next_prog_id.fetch_add(1, Ordering::Release);
-        let prog = &self.programs[count as usize];
-        prog.init(prog_id, prog_type, priority);
+        self.programs[count as usize].init(prog_id, prog_type, priority);
         
         for instr in instructions {
-            prog.add_instruction(*instr)?;
+            self.programs[count as usize].add_instruction(*instr)?;
         }
         
-        prog.load()?;
+        self.programs[count as usize].load()?;
         
         self.prog_count.fetch_add(1, Ordering::Release);
         
@@ -1055,7 +1083,7 @@ mod tests {
         ctrl.attach_program(prog_id, 0, 0).unwrap();
         ctrl.register_handler(1 << prog_type::VM_EXIT, prog_id).unwrap();
         
-        let handled = ctrl.handle_event(prog_type::VM_EXIT, 0, 100, 0);
+        let handled = ctrl.handle_event(prog_type::VM_EXIT as u16, 0, 100, 0);
         assert!(handled > 0);
         
         let stats = ctrl.get_stats();
